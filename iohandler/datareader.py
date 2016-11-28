@@ -18,6 +18,7 @@ def img_reader(
 		img_dims,
 		batch_size,
 		# num_examples_per_epoch,
+		rtype='tanh',
 		pattern='.*\.jpg',
 		ext='jpg',
 		num_threads=10,
@@ -39,6 +40,11 @@ def img_reader(
 	capacity = int(.5 * len(files))
 	min_after_dequeue = int(.2 * capacity)
 
+	info = dict(
+		capacity=capacity,
+		min_after_dequeue=min_after_dequeue,
+		n_files=len(files))
+
 	if ext == 'jpg' or ext == 'jpeg':
 		decoder = tf.image.decode_jpeg
 	elif ext == 'png':
@@ -56,7 +62,14 @@ def img_reader(
 		img = decoder(value, channels=c)
 		img = tf.image.crop_to_bounding_box(img, 0, 0, h, w)
 		img = tf.to_float(img)
-		img = tf.div(img, 255.)
+		if rtype == 'tanh':
+			img = tf.div(img, 127.5) - 1.
+		elif rtype == 'sigmoid':
+			img = tf.div(img, 255.)
+		else:
+			raise ValueError(
+				'Unsupported range type: {:s}.'.format(rtype) + 
+				'(sigmoid or tanh)')
 		img = tf.expand_dims(img, 0)
 
 
@@ -70,6 +83,6 @@ def img_reader(
 			enqueue_many=True,
 			min_after_dequeue=min_after_dequeue)
 
-		return imgs
+		return imgs, info
 
 
