@@ -46,16 +46,21 @@ class DCGAN(object):
                     kernel_size=[5, 5],
                     stride=[2, 2],
                     # weights_regularizer=slim.l2_regularizer(L2),
-                    normalizer_fn=slim.batch_norm,
-                    activation_fn=tf.nn.relu):
+                    # normalizer_fn=slim.batch_norm,
+                    # activation_fn=tf.nn.relu
+                    normalizer_fn=None,
+                    activation_fn=None):
 
                 x = slim.fully_connected(z, h * w * ch * 8,
                     normalizer_fn=slim.batch_norm,
-                    activation_fn=tf.nn.relu)
+                    activation_fn=tf.nn.relu,
+                    scope='BN-8')
 
                 x = tf.reshape(x, [-1, h, w, ch * 8])
                 for i in [4, 2, 1]:
                     x = slim.conv2d_transpose(x, ch * i)
+                    x = slim.batch_norm(x, scope='BN-{:d}'.format(i))
+                    x = tf.nn.relu(x)
 
                 # Don't apply BN for the last layer of G
                 x = slim.conv2d_transpose(x, c,
@@ -77,11 +82,16 @@ class DCGAN(object):
                     kernel_size=[5, 5],
                     stride=[2, 2],
                     # weights_regularizer=slim.l2_regularizer(L2),
-                    normalizer_fn=slim.batch_norm,
-                    activation_fn=lrelu):
-                x = slim.conv2d(x, ch, normalizer_fn=None)
+                    # normalizer_fn=slim.batch_norm,
+                    normalizer_fn=None,
+                    activation_fn=None):
+
+                x = slim.conv2d(x, ch)
+                x = lrelu(x)
                 for i in [2, 4, 8]:
                     x = slim.conv2d(x, ch * i)
+                    x = slim.batch_norm(x, scope='Bn-{:d}'.format(i))
+                    x = lrelu(x)
         
         # Don't apply BN for the last layer
         x = slim.flatten(x)
