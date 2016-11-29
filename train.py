@@ -18,7 +18,7 @@ datadir = '/home/jrm/proj/Hanzi/TWKai98_32x32'
 n_epoch = 10
 n_step = 16300
 batch_size = 64
-
+beta1 = 0.5
 
 
 
@@ -51,9 +51,9 @@ step_per_ep = info['n_files'] // batch_size
 arch = json.load(open('architecture.json'))
 
 machine = DCGAN(arch, is_training=True)
-xh = machine.decode(batch_size)
 
 loss = machine.loss(imgs)
+xh = machine.sample(batch_size)
 
 trainables = tf.trainable_variables()
 g_vars = [v for v in trainables if 'Generator' in v.name]
@@ -71,10 +71,10 @@ d_vars = [v for v in trainables if 'Discriminator' in v.name]
 # optimizer = tf.train.AdamOptimizer(lr)
 obj_D = loss['D_fake'] + loss['D_real']
 
-opt_d = tf.train.AdamOptimizer(lr).minimize(
+opt_d = tf.train.AdamOptimizer(lr, beta1).minimize(
 	obj_D,
 	var_list=d_vars)
-opt_g = tf.train.AdamOptimizer(lr).minimize(
+opt_g = tf.train.AdamOptimizer(lr, beta1).minimize(
 	loss['G_fake'],
 	var_list=g_vars)
 

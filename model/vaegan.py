@@ -30,50 +30,65 @@ class DCGAN(object):
         c = self.arch['img_c']
         ch = self.arch['ch_D']
 
-        x = slim.fully_connected(z,
-            h * w * ch * 8,
-            activation_fn=tf.nn.relu,
-            # weights_initializer=tf.random_normal_initializer(stddev=STDDEV),
-            weights_regularizer=slim.l2_regularizer(L2))
-        x = tf.reshape(x, [-1, h, w, ch * 8])
-        x = slim.batch_norm(x, scale=True, is_training=is_training)
+        if is_training:
+            reuse = None
+        else:
+            reuse = True
 
         with slim.arg_scope(
-                [slim.conv2d_transpose],
-                activation_fn=tf.nn.relu,
-                kernel_size=[5, 5],
-                stride=[2, 2],
-                # weights_initializer=tf.random_normal_initializer(stddev=STDDEV),
-                weights_regularizer=slim.l2_regularizer(L2)):
-            for i in [4, 2, 1]:
-                x = slim.conv2d_transpose(x, ch * i)
-                x = slim.batch_norm(x, scale=True, is_training=is_training)
+                [slim.batch_norm],
+                scale=True,
+                updates_collections=None,
+                is_training=is_training,
+                reuse=reuse):
+            with slim.arg_scope(
+                    [slim.conv2d_transpose],
+                    kernel_size=[5, 5],
+                    stride=[2, 2],
+                    # weights_regularizer=slim.l2_regularizer(L2),
+                    normalizer_fn=slim.batch_norm,
+                    activation_fn=tf.nn.relu):
 
-            x = slim.conv2d_transpose(x, c,
-                activation_fn=tf.nn.tanh)
+                x = slim.fully_connected(z, h * w * ch * 8,
+                    normalizer_fn=slim.batch_norm,
+                    activation_fn=tf.nn.relu)
 
+                x = tf.reshape(x, [-1, h, w, ch * 8])
+                for i in [4, 2, 1]:
+                    x = slim.conv2d_transpose(x, ch * i)
+
+                # Don't apply BN for the last layer of G
+                x = slim.conv2d_transpose(x, c,
+                    normalizer_fn=None,
+                    activation_fn=tf.nn.tanh)
         return x
 
     def discriminator(self, x, is_training):
         ch = self.arch['ch_D']
+
         with slim.arg_scope(
-                [slim.conv2d],
-                activation_fn=lrelu,
-                kernel_size=[5, 5],
-                stride=[2, 2],
-                # weights_initializer=tf.random_normal_initializer(stddev=STDDEV),
-                weights_regularizer=slim.l2_regularizer(L2)):
-            for i in [1, 2, 4, 8]:
-                x = slim.conv2d(x, ch*i)
-                x = slim.batch_norm(x, scale=True, is_training=is_training)
-
+                [slim.batch_norm],
+                scale=True,
+                updates_collections=None,
+                is_training=is_training,
+                reuse=None):
+            with slim.arg_scope(
+                    [slim.conv2d],
+                    kernel_size=[5, 5],
+                    stride=[2, 2],
+                    # weights_regularizer=slim.l2_regularizer(L2),
+                    normalizer_fn=slim.batch_norm,
+                    activation_fn=lrelu):
+                x = slim.conv2d(x, ch, normalizer_fn=None)
+                for i in [2, 4, 8]:
+                    x = slim.conv2d(x, ch * i)
+        
+        # Don't apply BN for the last layer
         x = slim.flatten(x)
-
         x = slim.fully_connected(x, 1,
-            activation_fn=tf.identity,
-            # weights_initializer=tf.random_normal_initializer(stddev=STDDEV)
-            weights_regularizer=slim.l2_regularizer(L2))
-        return x
+            # weights_regularizer=slim.l2_regularizer(L2)
+            activation_fn=None)
+        return x  # no explicit `sigmoid`
 
     def loss(self, x):
         batch_size = x.get_shape().as_list()[0]
@@ -84,6 +99,7 @@ class DCGAN(object):
             maxval=1.,
             name='z')
         xh = self.generate(z, is_training=self.is_training)
+        self.xh = xh
         logit_fake = self.discriminate(xh, is_training=self.is_training)
         logit_true = self.discriminate(x, is_training=self.is_training)
 
@@ -106,16 +122,17 @@ class DCGAN(object):
 
         return loss
 
-    def decode(self, z=128):
+    def sample(self, z=128):
         ''' Generate fake samples given `z`
         if z is not given or is an `int`,
         this fcn generates (z=128) samples
         '''
-        z = tf.random_uniform(
-            shape=[z, self.arch['z_dim']],
-            minval=-.5,
-            maxval=.5,
-            name='z_test')
-        return self.generate(z, is_training=False)
+        # z = tf.random_uniform(
+        #     shape=[z, self.arch['z_dim']],
+        #     minval=-.5,
+        #     maxval=.5,
+        #     name='z_test')
+        # return self.generate(z, is_training=False)
+        return self.xh  # [BUG] called before assigned
         # return xh
 
