@@ -51,10 +51,14 @@ class DCGAN(object):
                     normalizer_fn=None,
                     activation_fn=None):
 
+                # x = slim.fully_connected(z, h * w * ch * 8,
+                #     normalizer_fn=slim.batch_norm,
+                #     activation_fn=tf.nn.relu,
+                #     scope='BN-8')
                 x = slim.fully_connected(z, h * w * ch * 8,
-                    normalizer_fn=slim.batch_norm,
-                    activation_fn=tf.nn.relu,
-                    scope='BN-8')
+                    activation_fn=None)
+                x = slim.batch_norm(x, scope='BN-8')
+                x = tf.nn.relu(x)
 
                 x = tf.reshape(x, [-1, h, w, ch * 8])
                 for i in [4, 2, 1]:
@@ -86,7 +90,11 @@ class DCGAN(object):
                     normalizer_fn=None,
                     activation_fn=None):
 
+                # Radford: not applying batchnorm to the discriminator input layer
                 x = slim.conv2d(x, ch)
+                # =========== [TEST] =============
+                x = slim.batch_norm(x, scope='Bn-1')
+                # ================================
                 x = lrelu(x)
                 for i in [2, 4, 8]:
                     x = slim.conv2d(x, ch * i)

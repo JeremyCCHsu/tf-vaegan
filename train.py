@@ -72,8 +72,8 @@ d_vars = [v for v in trainables if 'Discriminator' in v.name]
 # optimizer = tf.train.AdamOptimizer(lr)
 obj_D = loss['D_fake'] + loss['D_real']
 
-# optimizer = tf.train.AdamOptimizer(lr, beta1)
-optimizer = tf.train.RMSPropOptimizer(lr)
+optimizer = tf.train.AdamOptimizer(lr, beta1)
+# optimizer = tf.train.RMSPropOptimizer(lr)
 
 opt_d = optimizer.minimize(
 	obj_D,
