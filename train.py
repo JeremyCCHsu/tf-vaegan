@@ -4,6 +4,10 @@ import time
 import json
 import tensorflow as tf
 
+import pdb
+
+from tensorflow.python.ops import control_flow_ops
+
 from datetime import datetime
 
 import matplotlib as mpl
@@ -134,6 +138,29 @@ def get_optimization_ops(loss):
     obj_D = loss['D_fake'] + loss['D_real']
     obj_G = loss['Dis'] + loss['G_fake']
     obj_E = loss['KL(z)'] + loss['Dis']
+
+    # [TEST] For BN ============
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    if update_ops:
+        updates = tf.group(*update_ops)
+
+        update_ops_D = [op for op in update_ops if 'Discriminator' in op.name]
+        if update_ops_D:
+            updates_D = tf.group(*update_ops_D)
+
+        update_ops_G = [op for op in update_ops if 'Generator' in op.name]
+        if update_ops_G:
+            updates_G = tf.group(*update_ops_G)
+        
+        update_ops_E = [op for op in update_ops if 'Encoder' in op.name]
+        if update_ops_E:
+            updates_E = tf.group(*update_ops_E)
+
+    pdb.set_trace()
+    obj_D = control_flow_ops.with_dependencies([updates_D], obj_D)
+    obj_G = control_flow_ops.with_dependencies([updates_G], obj_G)
+    obj_E = control_flow_ops.with_dependencies([updates_E], obj_E)
+    # ========================
 
     opt_d = optimizer.minimize(obj_D, var_list=d_vars)
     opt_g = optimizer.minimize(obj_G, var_list=g_vars)

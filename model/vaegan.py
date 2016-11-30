@@ -65,7 +65,7 @@ class DCGAN(object):
         with slim.arg_scope(
                 [slim.batch_norm],
                 scale=True,
-                updates_collections=None,
+                # updates_collections=None,
                 is_training=is_training,
                 reuse=None):
             with slim.arg_scope(
@@ -103,7 +103,7 @@ class DCGAN(object):
         with slim.arg_scope(
                 [slim.batch_norm],
                 scale=True,
-                updates_collections=None,
+                # updates_collections=None,
                 is_training=is_training,
                 reuse=reuse):
             with slim.arg_scope(
@@ -143,7 +143,7 @@ class DCGAN(object):
         with slim.arg_scope(
                 [slim.batch_norm],
                 scale=True,
-                updates_collections=None,
+                # updates_collections=None,
                 is_training=is_training,
                 reuse=None):
             with slim.arg_scope(
