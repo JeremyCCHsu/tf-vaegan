@@ -2,8 +2,10 @@
 	"img_w": 32, 
 	"img_h": 32,
 	"img_c": 1,
+	"mode": "DC-GAN",
 	"ch_D": 64,
 	"ch_G": 64,
-	"z_dim": 3,
-	"y_dim": 10
+	"z_dim": 100,
+	"y_dim": 10,
+	"l2-regularizer": 0e-6
 }
