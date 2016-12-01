@@ -65,7 +65,7 @@ class DCGAN(object):
         with slim.arg_scope(
                 [slim.batch_norm],
                 scale=True,
-                # updates_collections=None,
+                updates_collections=None,
                 is_training=is_training,
                 reuse=None):
             with slim.arg_scope(
@@ -95,41 +95,44 @@ class DCGAN(object):
         c = self.arch['img_c']
         ch = self.arch['ch_D']
 
-        if is_training:
-            reuse = None
-        else:
-            reuse = True
+        # if is_training:
+        #     reuse = None
+        # else:
+        #     reuse = True
 
         with slim.arg_scope(
                 [slim.batch_norm],
                 scale=True,
-                # updates_collections=None,
-                is_training=is_training,
-                reuse=reuse):
+                updates_collections=None,
+                is_training=is_training
+                # reuse=reuse
+                ):
             with slim.arg_scope(
                     [slim.conv2d_transpose],
                     kernel_size=[5, 5],
                     stride=[2, 2],
-                    # weights_regularizer=slim.l2_regularizer(L2),
-                    # normalizer_fn=slim.batch_norm,
-                    # activation_fn=tf.nn.relu
-                    normalizer_fn=None,
-                    activation_fn=None):
+                    weights_regularizer=slim.l2_regularizer(L2),
+                    normalizer_fn=slim.batch_norm,
+                    activation_fn=tf.nn.relu):
+                    # normalizer_fn=None,
+                    # activation_fn=None):
 
                 # x = slim.fully_connected(z, h * w * ch * 8,
                 #     normalizer_fn=slim.batch_norm,
                 #     activation_fn=tf.nn.relu,
                 #     scope='BN-8')
-                x = slim.fully_connected(z, h * w * ch * 8,
-                    activation_fn=None)
-                x = slim.batch_norm(x, scope='BN-8')
-                x = tf.nn.relu(x)
+                
+                x = slim.fully_connected(z, h * w * ch * 8)
+                # x = slim.fully_connected(z, h * w * ch * 8,
+                #     activation_fn=None)
+                # x = slim.batch_norm(x, scope='BN-8')
+                # x = tf.nn.relu(x)
 
                 x = tf.reshape(x, [-1, h, w, ch * 8])
                 for i in [4, 2, 1]:
                     x = slim.conv2d_transpose(x, ch * i)
-                    x = slim.batch_norm(x, scope='BN-{:d}'.format(i))
-                    x = tf.nn.relu(x)
+                    # x = slim.batch_norm(x, scope='BN-{:d}'.format(i))
+                    # x = tf.nn.relu(x)
 
                 # Don't apply BN for the last layer of G
                 x = slim.conv2d_transpose(x, c,
@@ -143,35 +146,35 @@ class DCGAN(object):
         with slim.arg_scope(
                 [slim.batch_norm],
                 scale=True,
-                # updates_collections=None,
+                updates_collections=None,
                 is_training=is_training,
                 reuse=None):
             with slim.arg_scope(
                     [slim.conv2d],
                     kernel_size=[5, 5],
                     stride=[2, 2],
-                    # weights_regularizer=slim.l2_regularizer(L2),
-                    # normalizer_fn=slim.batch_norm,
-                    normalizer_fn=None,
+                    weights_regularizer=slim.l2_regularizer(L2),
+                    normalizer_fn=slim.batch_norm,
+                    # normalizer_fn=None,
                     activation_fn=None):
 
                 # Radford: not applying batchnorm to the discriminator input layer
                 x = slim.conv2d(x, ch)
                 # =========== [TEST] =============
                 # J: This seemed to be harmless
-                x = slim.batch_norm(x, scope='Bn-1')
-                # ================================
-                x = lrelu(x)
+                # x = slim.batch_norm(x, scope='Bn-1')
+                # # ================================
+                # x = lrelu(x)
                 for i in [2, 4, 8]:
                     x = slim.conv2d(x, ch * i)
-                    x = slim.batch_norm(x, scope='Bn-{:d}'.format(i))
-                    x = lrelu(x)
+                    # x = slim.batch_norm(x, scope='Bn-{:d}'.format(i))
+                    # x = lrelu(x)
         
         # Don't apply BN for the last layer
         x = slim.flatten(x)
         h = x
         x = slim.fully_connected(x, 1,
-            # weights_regularizer=slim.l2_regularizer(L2)
+            weights_regularizer=slim.l2_regularizer(L2),
             activation_fn=None)
         return x, h  # no explicit `sigmoid`
 
