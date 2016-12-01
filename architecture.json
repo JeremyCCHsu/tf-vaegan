@@ -2,7 +2,7 @@
 	"img_w": 32, 
 	"img_h": 32,
 	"img_c": 1,
-	"mode": "DC-GAN",
+	"mode": "VAE-GAN",
 	"ch_D": 64,
 	"ch_G": 64,
 	"z_dim": 100,

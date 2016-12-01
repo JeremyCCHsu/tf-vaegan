@@ -5,7 +5,7 @@ import numpy as np
 
 # [TODO] I think the upsampling used too much convs (it's OK but I probably have to try less first)
 
-L2 = 0e-6
+L2 = 1e-6
 # L2 = 0.001
 STDDEV = 0.02
 EPSILON = 1e-10
@@ -44,7 +44,7 @@ def GaussianSampleLayer(z_mu, z_lv, name='GaussianSampleLayer'):
         return tf.add(z_mu, tf.mul(eps, std))
 
 
-def lrelu(x, leak=0.2, name="lrelu"):
+def lrelu(x, leak=0.02, name="lrelu"):
     ''' Leaky ReLU '''
     return tf.maximum(x, leak*x)
 
@@ -76,6 +76,7 @@ class DCGAN(object):
                 [slim.batch_norm],
                 scale=True,
                 updates_collections=None,
+                decay=0.9, epsilon=1e-5,
                 is_training=is_training,
                 reuse=None):
             with slim.arg_scope(
@@ -115,6 +116,7 @@ class DCGAN(object):
                 [slim.batch_norm],
                 scale=True,
                 updates_collections=None,
+                decay=0.9, epsilon=1e-5,
                 is_training=is_training,
                 scope='BN'):
             with slim.arg_scope(
@@ -145,13 +147,14 @@ class DCGAN(object):
                 [slim.batch_norm],
                 scale=True,
                 updates_collections=None,
+                decay=0.9, epsilon=1e-5,
                 is_training=is_training,
                 # reuse=None
                 scope='BN'):
             with slim.arg_scope(
                     [slim.conv2d],
                     kernel_size=[5, 5], stride=[2, 2],
-                    weights_regularizer=slim.l2_regularizer(L2),
+                    weights_regularizer=slim.l2_regularizer(L2*10.),
                     normalizer_fn=slim.batch_norm,
                     activation_fn=lrelu):
 
@@ -164,7 +167,7 @@ class DCGAN(object):
         x = slim.flatten(x)
         h = x
         x = slim.fully_connected(x, 1,
-            weights_regularizer=slim.l2_regularizer(L2),
+            weights_regularizer=slim.l2_regularizer(L2*10.),
             activation_fn=None)
         return x, h  # no explicit `sigmoid`
 
@@ -177,8 +180,8 @@ class DCGAN(object):
             batch_size = x.get_shape().as_list()[0]
             z = tf.random_uniform(
                 shape=[batch_size, self.arch['z_dim']],
-                minval=-1.,
-                maxval=1.,
+                minval=-1,
+                maxval=.99,
                 name='z')
         else:
             raise ValueError('Supported mode: DC-GAN or VAE-GAN')
@@ -200,6 +203,12 @@ class DCGAN(object):
             is_training=self.is_training)
         logit_fake, xh_through_D = self._discriminate(xh,
             is_training=self.is_training)
+
+        # Instance Noise (but added in the last layer) => useless
+        # logit_true_ = logit_true + tf.random_normal(
+        #     shape=tf.shape(logit_true), stddev=1.)
+        # logit_fake_ = logit_fake + tf.random_normal(
+        #     shape=tf.shape(logit_fake), stddev=1.)
 
         with tf.name_scope('loss'):
             loss = dict()
@@ -230,6 +239,16 @@ class DCGAN(object):
                         xh_through_D,
                         tf.zeros_like(xh_through_D)))
 
+            # For summaries
+            with tf.name_scope('Summary'):
+                tf.histogram_summary('z', z)
+                tf.histogram_summary('D(true)', tf.nn.sigmoid(logit_true))
+                tf.histogram_summary('D(Fake)', tf.nn.sigmoid(logit_fake))
+                tf.histogram_summary('logit_true', logit_true)
+                tf.histogram_summary('logit_fake', logit_fake)
+                tf.histogram_summary('logits',
+                    tf.concat(0, [logit_fake, logit_true]))
+                tf.image_summary("G", xh)
         return loss
 
     def sample(self, z=128):
@@ -239,8 +258,8 @@ class DCGAN(object):
         '''
         z = tf.random_uniform(
             shape=[z, self.arch['z_dim']],
-            minval=-.5,
-            maxval=.5,
+            minval=-1,
+            maxval=.99,
             name='z_test')
         # return self.generate(z, is_training=False)
         # return self.xh  # [BUG] called before assigned

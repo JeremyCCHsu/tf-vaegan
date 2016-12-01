@@ -146,6 +146,7 @@ def get_optimization_ops(loss, mode='VAE-GAN'):
     (but do we have to have two different classes of VAE- and DC-?)
     '''
     optimizer = tf.train.AdamOptimizer(args.lr, args.beta1)
+    # optimizer_g = tf.train.AdamOptimizer(args.lr*2, args.beta1)
 
     trainables = tf.trainable_variables()
     g_vars = [v for v in trainables if 'Generator' in v.name]
@@ -243,7 +244,8 @@ def main():
 
     writer = tf.train.SummaryWriter(dirs['logdir'])
     writer.add_graph(tf.get_default_graph())
-
+    
+    summary_op = tf.merge_all_summaries()
 
     sess = tf.Session()
     init = tf.global_variables_initializer()
@@ -280,10 +282,14 @@ def main():
     try:
         n_iter_per_epoch = info['n_files'] // batch_size
         time_i = time.time()
+        step = 0
         for ep in range(n_epoch):
             for it in range(n_iter_per_epoch):
                 _, l_df, l_dr = sess.run([opt_d, loss['D_fake'], loss['D_real']])
-                _, l_g = sess.run([opt_g, loss['G_fake']])
+
+                # Update G twice (This is different from doubling the lr.)
+                _, l_g, summary = sess.run([opt_g, loss['G_fake'], summary_op])
+                _, l_g, summary = sess.run([opt_g, loss['G_fake'], summary_op])
                 if arch['mode'] == 'VAE-GAN':
                     _, l_e, l_dis = sess.run([opt_e, loss['KL(z)'], loss['Dis']])
 
@@ -295,6 +301,8 @@ def main():
                     'd_loss={:6.3f}+{:6.3f}, '.format(l_df, l_dr) +
                     'g_loss={:5.2f}, T={:.2f}'.format(l_g, t)
                     )
+                step += 1
+                writer.add_summary(summary, step)
 
                 if it % (n_iter_per_epoch // 1) == 0:
                     if arch['mode'] == 'VAE-GAN':
@@ -311,15 +319,16 @@ def main():
                                 dirs['logdir'],
                                 'test-Ep{:03d}-It{:04d}-dc.png'.format(ep, it)))
 
-                    save(saver, sess, dirs['logdir'], ep * n_iter_per_epoch + it)
+                    save(saver, sess, dirs['logdir'], step)
 
     except KeyboardInterrupt:
         print()
 
     finally:
-        save(saver, sess, dirs['logdir'], ep * n_iter_per_epoch + it)
+        save(saver, sess, dirs['logdir'], step)
         coord.request_stop()
         coord.join(threads)
+
 
 if __name__ == '__main__':
     main()
