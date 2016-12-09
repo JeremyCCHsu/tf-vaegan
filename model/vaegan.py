@@ -175,6 +175,15 @@ class DCGAN(object):
         if self.arch['mode'] == 'VAE-GAN':
             z_mu, z_lv = self._encode(x, is_training=self.is_training)
             z = GaussianSampleLayer(z_mu, z_lv)
+
+            # z_direct = GaussianSampleLayer(
+            #     tf.zeros_like(z_mu),
+            #     tf.zeros_like(z_lv))
+            # xz = self._generate(
+            #     z_direct,
+            #     is_training=self.is_training)
+            # logit_fake_xz, _ = self._discriminate(xz,
+            #     is_training=self.is_training)
         elif self.arch['mode'] == 'DC-GAN':
             # [TODO] Maybe I should make sampling stratified (but how?)
             batch_size = x.get_shape().as_list()[0]
@@ -188,6 +197,8 @@ class DCGAN(object):
 
         xh = self._generate(z, is_training=self.is_training)
         self.xh = xh
+
+
 
         # pdb.set_trace()
 
@@ -238,6 +249,11 @@ class DCGAN(object):
                         x_through_D,
                         xh_through_D,
                         tf.zeros_like(xh_through_D)))
+                
+                # loss['G_fake_xz'] = tf.reduce_mean(
+                #     tf.nn.sigmoid_cross_entropy_with_logits(
+                #         logit_fake_xz,
+                #         tf.ones_like(logit_fake_xz)))
 
             # For summaries
             with tf.name_scope('Summary'):

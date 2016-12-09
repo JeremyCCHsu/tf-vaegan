@@ -7,5 +7,5 @@
 	"ch_G": 64,
 	"z_dim": 100,
 	"y_dim": 10,
-	"l2-regularizer": 0e-6
+	"l2-regularizer": 1e-6
 }

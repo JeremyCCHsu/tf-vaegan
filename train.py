@@ -146,7 +146,6 @@ def get_optimization_ops(loss, mode='VAE-GAN'):
     (but do we have to have two different classes of VAE- and DC-?)
     '''
     optimizer = tf.train.AdamOptimizer(args.lr, args.beta1)
-    # optimizer_g = tf.train.AdamOptimizer(args.lr*2, args.beta1)
 
     trainables = tf.trainable_variables()
     g_vars = [v for v in trainables if 'Generator' in v.name]
@@ -154,14 +153,14 @@ def get_optimization_ops(loss, mode='VAE-GAN'):
 
     if mode == 'DC-GAN':
         obj_D = loss['D_fake'] + loss['D_real']
-        obj_G = loss['G_fake']
+        obj_G = loss['G_fake'] + loss['G_fake_xz'] 
         opt_e = None
 
     elif mode == 'VAE-GAN':
         e_vars = [v for v in trainables if 'Encoder' in v.name]
 
         obj_D = loss['D_fake'] + loss['D_real']
-        obj_G = loss['G_fake'] + loss['Dis']
+        obj_G = loss['G_fake'] + loss['Dis'] #+ loss['G_fake_xz'] 
         obj_E = loss['KL(z)'] + loss['Dis']
 
         opt_e = optimizer.minimize(obj_E, var_list=e_vars)
@@ -174,6 +173,7 @@ def get_optimization_ops(loss, mode='VAE-GAN'):
 
 def get_default_logdir(logdir_root):
     return  os.path.join(logdir_root, 'train', STARTED_DATESTRING)
+
 
 def validate_log_dirs(args):
     if args.logdir and args.restore_from:
@@ -287,7 +287,7 @@ def main():
             for it in range(n_iter_per_epoch):
                 _, l_df, l_dr = sess.run([opt_d, loss['D_fake'], loss['D_real']])
 
-                # Update G twice (This is different from doubling the lr.)
+                # Update G twice
                 _, l_g, summary = sess.run([opt_g, loss['G_fake'], summary_op])
                 _, l_g, summary = sess.run([opt_g, loss['G_fake'], summary_op])
                 if arch['mode'] == 'VAE-GAN':
