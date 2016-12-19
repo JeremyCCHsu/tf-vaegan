@@ -1,53 +1,12 @@
 import pdb
 from tensorflow.contrib import slim
 import tensorflow as tf
-import numpy as np
+from util.layer import GaussianLogDensity, GaussianKLD, \
+    GaussianSampleLayer, lrelu
 
 # [TODO] I think the upsampling used too much convs (it's OK but I probably have to try less first)
 
 L2 = 1e-6
-# L2 = 0.001
-STDDEV = 0.02
-EPSILON = 1e-10
-
-
-def GaussianLogDensity(x, mu, log_var, name='GaussianLogDensity'):
-    c = np.log(2 * np.pi)
-    var = tf.exp(log_var)
-    x_mu2 = tf.square(tf.sub(x, mu))   # [Issue] not sure the dim works or not?
-    x_mu2_over_var = tf.div(x_mu2, var + EPSILON)
-    log_prob = -0.5 * (c + log_var + x_mu2_over_var)
-    log_prob = tf.reduce_sum(log_prob, -1, name=name)   # keep_dims=True,
-    return log_prob
-
-
-def GaussianKLD(mu1, log_var1, mu2, log_var2):
-    ''' Kullback-Leibler divergence of two Gaussians
-        *Assuming that each dimension is independent
-        mu: mean
-        log_var: log variance
-        Equation: http://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
-    '''
-    with tf.name_scope('GaussianKLD'):
-        var = tf.exp(log_var1)
-        var2 = tf.exp(log_var2)
-        mu_diff_sq = tf.square(tf.sub(mu1, mu2))
-        single_variable_kld = 0.5 * (log_var2 - log_var1) \
-            + 0.5 * tf.div(var, var2) * (tf.add(1.0, mu_diff_sq)) - 0.5
-        return tf.reduce_sum(single_variable_kld, -1)
-
-
-def GaussianSampleLayer(z_mu, z_lv, name='GaussianSampleLayer'):
-    with tf.name_scope(name):
-        eps = tf.random_normal(tf.shape(z_mu))
-        std = tf.sqrt(tf.exp(z_lv))
-        return tf.add(z_mu, tf.mul(eps, std))
-
-
-def lrelu(x, leak=0.02, name="lrelu"):
-    ''' Leaky ReLU '''
-    return tf.maximum(x, leak*x)
-
 
 class DCGAN(object):
     '''
@@ -174,16 +133,23 @@ class DCGAN(object):
     def loss(self, x):      
         if self.arch['mode'] == 'VAE-GAN':
             z_mu, z_lv = self._encode(x, is_training=self.is_training)
-            z = GaussianSampleLayer(z_mu, z_lv)
+            # z = GaussianSampleLayer(z_mu, z_lv)
+            z_ = GaussianSampleLayer(z_mu, z_lv)
+            z = tf.nn.sigmoid(z_) * 2. - 1.
 
             # z_direct = GaussianSampleLayer(
             #     tf.zeros_like(z_mu),
             #     tf.zeros_like(z_lv))
-            # xz = self._generate(
-            #     z_direct,
-            #     is_training=self.is_training)
-            # logit_fake_xz, _ = self._discriminate(xz,
-            #     is_training=self.is_training)
+            z_direct = tf.random_uniform(
+                shape=tf.shape(z_mu),
+                minval=-1,
+                maxval=.99,
+                name='z')
+            xz = self._generate(
+                z_direct,
+                is_training=self.is_training)
+            logit_fake_xz, _ = self._discriminate(xz,
+                is_training=self.is_training)
         elif self.arch['mode'] == 'DC-GAN':
             # [TODO] Maybe I should make sampling stratified (but how?)
             batch_size = x.get_shape().as_list()[0]
@@ -197,7 +163,6 @@ class DCGAN(object):
 
         xh = self._generate(z, is_training=self.is_training)
         self.xh = xh
-
 
 
         # pdb.set_trace()
@@ -239,6 +204,10 @@ class DCGAN(object):
                     tf.ones_like(logit_fake)))
 
             if self.arch['mode'] == "VAE-GAN":
+                # loss['KL(z)'] = tf.reduce_mean(
+                #     GaussianKLD(
+                #         z_mu, z_lv,
+                #         tf.zeros_like(z_mu), tf.zeros_like(z_lv)))
                 loss['KL(z)'] = tf.reduce_mean(
                     GaussianKLD(
                         z_mu, z_lv,
@@ -250,10 +219,10 @@ class DCGAN(object):
                         xh_through_D,
                         tf.zeros_like(xh_through_D)))
                 
-                # loss['G_fake_xz'] = tf.reduce_mean(
-                #     tf.nn.sigmoid_cross_entropy_with_logits(
-                #         logit_fake_xz,
-                #         tf.ones_like(logit_fake_xz)))
+                loss['G_fake_xz'] = tf.reduce_mean(
+                    tf.nn.sigmoid_cross_entropy_with_logits(
+                        logit_fake_xz,
+                        tf.ones_like(logit_fake_xz)))
 
             # For summaries
             with tf.name_scope('Summary'):

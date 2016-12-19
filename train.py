@@ -160,7 +160,9 @@ def get_optimization_ops(loss, mode='VAE-GAN'):
         e_vars = [v for v in trainables if 'Encoder' in v.name]
 
         obj_D = loss['D_fake'] + loss['D_real']
-        obj_G = loss['G_fake'] + loss['Dis'] #+ loss['G_fake_xz'] 
+        # obj_G = loss['G_fake'] + loss['Dis'] #+ loss['G_fake_xz'] 
+        obj_G = loss['G_fake'] + loss['Dis'] + loss['G_fake_xz'] 
+        # obj_E = loss['KL(z)'] + loss['Dis']
         obj_E = loss['KL(z)'] + loss['Dis']
 
         opt_e = optimizer.minimize(obj_E, var_list=e_vars)
