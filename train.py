@@ -7,29 +7,22 @@ import numpy as np
 
 import pdb
 
-from tensorflow.python.ops import control_flow_ops
+# from tensorflow.python.ops import control_flow_ops
 
 from datetime import datetime
 
-import matplotlib as mpl
-mpl.use('Agg')
-import matplotlib.pyplot as plt
+# import matplotlib as mpl
+# mpl.use('Agg')
+# import matplotlib.pyplot as plt
 
-from model.vaegan import DCGAN
+from model.vaegan import VAEGAN
 from iohandler.datareader import img_reader
 
 from tensorflow.contrib.tensorboard.plugins import projector
 
 from PIL import Image
 
-logdir = 'log'
-# lr = 2e-4
-# beta1 = 0.5
-# datadir = '/home/jrm/proj/Hanzi/TWKai98_32x32'
-
-n_epoch = 100
-# n_step = 16300
-batch_size = 64
+from util.wrapper import save, load
 
 STARTED_DATESTRING = datetime.now().strftime('%0m%0d-%0H%0M-%0S-%Y')
 N_INTERP = 10
@@ -41,54 +34,23 @@ N_VISUALIZE = 10000
 
 args = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string(
-    'datadir', '/home/jrm/proj/Hanzi/TWKai98_32x32', 'dir to dataset')
+    'datadir', './data/TWKai98_32x32_trn', 'dir to dataset')
 tf.app.flags.DEFINE_string(
     'logdir_root', None, 'root of log dir')
 tf.app.flags.DEFINE_string(
     'logdir', None, 'log dir')
 tf.app.flags.DEFINE_string(
     'restore_from', None, 'restore from dir (not from *.ckpt)')
+tf.app.flags.DEFINE_string(
+    'architecture', 'architecture.json', 'network architecture')
+tf.app.flags.DEFINE_string(
+    'gpu_cfg', None, 'GPU configuration')
 tf.app.flags.DEFINE_integer('n_epoch', 100, 'num of epoch')
 tf.app.flags.DEFINE_integer('batch_size', 64, 'batch size')
 tf.app.flags.DEFINE_float('lr', 2e-4, 'learning rate')
 tf.app.flags.DEFINE_float('beta1', 0.5, 'beta1 in AdamOptimizer')
-tf.app.flags.DEFINE_boolean('train', False, 'is training or not')
-
-# [TODO] should I put this in a util dir?
-def save(saver, sess, logdir, step):
-    ''' Save a model to logdir/model.ckpt-[step] '''
-    model_name = 'model.ckpt'
-    checkpoint_path = os.path.join(logdir, model_name)
-    print('Storing checkpoint to {} ...'.format(logdir), end="")
-    sys.stdout.flush()
-
-    if not os.path.exists(logdir):
-        os.makedirs(logdir)
-
-    saver.save(sess, checkpoint_path, global_step=step)
-    print(' Done.')
-
-
-def load(saver, sess, logdir):
-    '''
-    Try to load model form a dir (search for the newest checkpoint)
-    '''
-    print('Trying to restore checkpoints from {} ...'.format(logdir),
-        end="")
-    ckpt = tf.train.get_checkpoint_state(logdir)
-    if ckpt:
-        print('  Checkpoint found: {}'.format(ckpt.model_checkpoint_path))
-        global_step = int(
-            ckpt.model_checkpoint_path
-            .split('/')[-1]
-            .split('-')[-1])
-        print('  Global step: {}'.format(global_step))
-        print('  Restoring...', end="")
-        saver.restore(sess, ckpt.model_checkpoint_path)
-        return global_step
-    else:
-        print('No checkpoint found')
-        return None
+tf.app.flags.DEFINE_float('reconst_v_gan', 2e-4, 'beta1 in AdamOptimizer')
+# tf.app.flags.DEFINE_boolean('train', True, 'is training or not')
 
 
 def visualize_random_samples(sess, xh, n=8, filename=None):
@@ -124,21 +86,41 @@ def visualize_random_samples(sess, xh, n=8, filename=None):
         im.save(filename)
 
 
-def visualize_interpolation(sess, x_interp, filename=None):
-    x_ = sess.run(x_interp)
-    plt.figure(figsize=(x_.shape[0], 1))
-    for i in range(x_.shape[0]):
-        plt.subplot(1, x_.shape[0], i + 1)
-        plt.imshow(x_[i, :, :, 0], interpolation='none', cmap='gray')
-        plt.axis('off')
-        # plt.colorbar()
-    
+def visualize_interpolation(sess, x_interp, N=8, filename=None):
+    x_s = list()
+    for _ in range(1, N + 1):
+        x = sess.run(x_interp)  # (n, h, w, c)
+        x_s.append(x)
+    x_s = np.concatenate(x_s)
+    shapes = x_s.shape
+    M = shapes[0] // N
+    x_s = np.reshape(x_s, [N, M, shapes[1], shapes[2], shapes[3]])
+    x_s = np.transpose(x_s, [0, 2, 1, 3, 4])
+    x_s = np.reshape(x_s, [N * shapes[1], M * shapes[2], shapes[3]])
+
+    # plt.figure(figsize=(M, N))
+    # for i in range(x_.shape[0]):
+    #     plt.subplot(1, x_.shape[0], i + 1)
+    #     plt.imshow(x_[i, :, :, 0], interpolation='none', cmap='gray')
+    #     plt.axis('off')
+
+    x_s = (x_s / 2 + 0.5) * 255
+    x_s = x_s.astype(np.uint8)
+    # [TODO] 1. Use tf.image.encode_png, or
+    #        2. deal with channel (Image.fromarray and plt.imshow support 2D only)
+    im = Image.fromarray(x_s[:, :, 0])
     if filename:
-        plt.savefig(filename)
-        plt.close()
+        im.save(filename)
+
+    # plt.imshow(x_s[:, :, 0], interpolation='none', cmap='gray')
+    # plt.axis('off')
+    
+    # if filename:
+    #     plt.savefig(filename)
+    #     plt.close()
 
 
-def get_optimization_ops(loss, mode='VAE-GAN'):
+def get_optimization_ops(loss, args, mode='VAE-GAN'):
     '''
     [TODO]
     Although most of the trainer structures are the same,
@@ -160,9 +142,7 @@ def get_optimization_ops(loss, mode='VAE-GAN'):
         e_vars = [v for v in trainables if 'Encoder' in v.name]
 
         obj_D = loss['D_fake'] + loss['D_real']
-        # obj_G = loss['G_fake'] + loss['Dis'] #+ loss['G_fake_xz'] 
-        obj_G = loss['G_fake'] + loss['Dis'] + loss['G_fake_xz'] 
-        # obj_E = loss['KL(z)'] + loss['Dis']
+        obj_G = loss['G_fake'] + loss['Dis'] * args.reconst_v_gan #+ loss['G_fake_xz'] 
         obj_E = loss['KL(z)'] + loss['Dis']
 
         opt_e = optimizer.minimize(obj_E, var_list=e_vars)
@@ -174,7 +154,7 @@ def get_optimization_ops(loss, mode='VAE-GAN'):
 
 
 def get_default_logdir(logdir_root):
-    return  os.path.join(logdir_root, 'train', STARTED_DATESTRING)
+    return os.path.join(logdir_root, 'train', STARTED_DATESTRING)
 
 
 def validate_log_dirs(args):
@@ -212,34 +192,40 @@ def main():
     dirs = validate_log_dirs(args)
 
     coord = tf.train.Coordinator()
-    arch = json.load(open('architecture.json'))
+
+    with open(args.architecture) as f:
+        arch = json.load(f)
+
+    # copy(args.architecture, dirs['logdir'])
+
     imgs, info = img_reader(
         datadir=args.datadir,
-        img_dims=(arch['img_h'], arch['img_w'], arch['img_c']),
-        batch_size=batch_size,
+        img_dims=arch['hwc'],
+        batch_size=args.batch_size,
         rtype='tanh')
     
-    machine = DCGAN(arch, is_training=True)
+    machine = VAEGAN(arch, is_training=True)
 
     loss = machine.loss(imgs)
-    xh = machine.sample(batch_size)
+    xh = machine.sample(args.batch_size)
     
     x_interp = machine.interpolate(imgs[0], imgs[1], N_INTERP)
 
-    opt_d, opt_g, opt_e = get_optimization_ops(loss, arch['mode'])
-
+    opt_d, opt_g, opt_e = get_optimization_ops(loss, args, arch['mode'])
 
 
     # ========== For embedding =============
+    h, w, c = arch['hwc']
     img4em = tf.Variable(
         np.reshape(
             np.fromfile(
                 SPRITE_NUMPY_FILE, np.float32),
-                [N_VISUALIZE, arch['img_h'], arch['img_w'], arch['img_c']]),
+                [N_VISUALIZE, h, w, c]),
         name='emb_input_img')
     codes = machine.encode(img4em)
-    em_var = tf.Variable(tf.zeros((N_VISUALIZE, arch['z_dim'])))
-    # em_var = tf.Variable(codes['mu'], name='em_var')
+    em_var = tf.Variable(
+        tf.zeros((N_VISUALIZE, arch['z_dim'])),
+        name='embeddings')
     # ======================================
 
 
@@ -249,11 +235,26 @@ def main():
     
     summary_op = tf.merge_all_summaries()
 
-    sess = tf.Session()
+    if args.gpu_cfg:
+        with open(args.gpu_cfg) as f:
+            cfg = json.load(f)
+        gpu_options = tf.GPUOptions(
+            per_process_gpu_memory_fraction=cfg['per_process_gpu_memory_fraction'])
+        session_conf = tf.ConfigProto(
+            allow_soft_placement=cfg['allow_soft_placement'],
+            log_device_placement=cfg['log_device_placement'],
+            inter_op_parallelism_threads=cfg['inter_op_parallelism_threads'],
+            intra_op_parallelism_threads=cfg['intra_op_parallelism_threads'],
+            gpu_options=gpu_options)
+        sess = tf.Session(
+            config=session_conf)
+    else:
+        sess = tf.Session()
+
     init = tf.global_variables_initializer()
     sess.run(init)
 
-    saver = tf.train.Saver() #tf.global_variables()
+    saver = tf.train.Saver()  # tf.global_variables()
     try:
         saved_global_step = load(saver, sess, dirs['restore_from'])
         if saved_global_step is None:
@@ -267,14 +268,14 @@ def main():
 
 
     # ========== For embedding =============
-    tf.assign(em_var, codes['mu'], name='X/em_var')
+    ass_op = tf.assign(em_var, codes['mu'], name='X/em_var')
 
     config = projector.ProjectorConfig()
     embedding = config.embeddings.add()
     embedding.tensor_name = em_var.name
     print(em_var.name, em_var.get_shape())
     embedding.sprite.image_path = PATH_TO_SPRITE_IMAGE
-    embedding.sprite.single_image_dim.extend([arch['img_w'], arch['img_h']])
+    embedding.sprite.single_image_dim.extend([w, h])
     embedding.metadata_path = PATH_TO_LABEL
     projector.visualize_embeddings(writer, config)
     # =====================================
@@ -282,10 +283,10 @@ def main():
 
     # ========== Actual training loop ==========
     try:
-        n_iter_per_epoch = info['n_files'] // batch_size
+        n_iter_per_epoch = info['n_files'] // args.batch_size
         time_i = time.time()
         step = 0
-        for ep in range(n_epoch):
+        for ep in range(args.n_epoch):
             for it in range(n_iter_per_epoch):
                 _, l_df, l_dr = sess.run([opt_d, loss['D_fake'], loss['D_real']])
 
@@ -295,39 +296,45 @@ def main():
                 if arch['mode'] == 'VAE-GAN':
                     _, l_e, l_dis = sess.run([opt_e, loss['KL(z)'], loss['Dis']])
 
-                t = time.time() - time_i
+                # Message
+                msg = 'Epoch [{:3d}/{:3d}] '.format(ep + 1, args.n_epoch)\
+                    + '[{:4d}/{:4d}] '.format(it + 1, n_iter_per_epoch)\
+                    + 'd_loss={:6.3f}+{:6.3f}, '.format(l_df, l_dr)\
+                    + 'g_loss={:5.2f}, '.format(l_g)
+                    
+                if arch['mode'] == 'VAE-GAN':
+                    msg += 'KLD={:6.3f}, DIS={:6.3f}, '.format(l_e, l_dis)
 
-                print(
-                    'Epoch [{:3d}/{:3d}] '.format(ep + 1, n_epoch) +
-                    '[{:4d}/{:4d}] '.format(it + 1, n_iter_per_epoch) +
-                    'd_loss={:6.3f}+{:6.3f}, '.format(l_df, l_dr) +
-                    'g_loss={:5.2f}, T={:.2f}'.format(l_g, t)
-                    )
-                step += 1
+                msg += 'T={:.2f}'.format(time.time() - time_i)
+                print(msg)
+
                 writer.add_summary(summary, step)
 
+                # Demo/Output
                 if it % (n_iter_per_epoch // 1) == 0:
                     if arch['mode'] == 'VAE-GAN':
                         visualize_interpolation(sess, x_interp,
                             filename=os.path.join(
                                 dirs['logdir'],
                                 'test-Ep{:03d}-It{:04d}.png'.format(ep, it)))
-                        tmp = sess.run(codes['mu'])
-                        sess.run(em_var.assign(tmp))
+                        sess.run(ass_op)
                     
-                    elif arch['mode'] == 'DC-GAN':
-                        visualize_random_samples(sess, xh,
-                            filename=os.path.join(
-                                dirs['logdir'],
-                                'test-Ep{:03d}-It{:04d}-dc.png'.format(ep, it)))
+                    visualize_random_samples(sess, xh,
+                        filename=os.path.join(
+                            dirs['logdir'],
+                            'test-Ep{:03d}-It{:04d}-dc.png'.format(ep, it)))
 
                     save(saver, sess, dirs['logdir'], step)
+
+                step += 1
 
     except KeyboardInterrupt:
         print()
 
     finally:
         save(saver, sess, dirs['logdir'], step)
+        with open(os.path.join(dirs['logdir'], args.architecture), 'w') as f:
+            json.dump(arch, f)
         coord.request_stop()
         coord.join(threads)
 

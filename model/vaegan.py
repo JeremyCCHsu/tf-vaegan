@@ -4,19 +4,16 @@ import tensorflow as tf
 from util.layer import GaussianLogDensity, GaussianKLD, \
     GaussianSampleLayer, lrelu
 
-# [TODO] I think the upsampling used too much convs (it's OK but I probably have to try less first)
-
-L2 = 1e-6
-
-class DCGAN(object):
+class VAEGAN(object):
     '''
-    [TODO] should rename as 'ConvGAN'
-    It is strange that my implementation 
-      1. converges much slower than Carpderm's
-      2. produces far less diverse samples
+    VAE-GAN: Variational Auto-encoder with Generative Adversarial Net
+
+    [TODO] I shall purge the legacy part of DC-GAN 
+           because the API's aren't the same.
     '''
     def __init__(self, arch, is_training=False):
         self.arch = arch
+        self._sanity_check()
         self.is_training = is_training
 
         self._generate = tf.make_template(
@@ -30,7 +27,16 @@ class DCGAN(object):
             self._encoder)
 
 
+    def _sanity_check(self):
+        for net in ['encoder', 'generator', 'discriminator']:
+            assert len(self.arch[net]['output']) > 2
+            assert len(self.arch[net]['output']) == len(self.arch[net]['kernel'])
+            assert len(self.arch[net]['output']) == len(self.arch[net]['stride'])
+        
+
     def _encoder(self, x, is_training):
+        n_layer = len(self.arch['encoder']['output'])
+        subnet = self.arch['encoder']
         with slim.arg_scope(
                 [slim.batch_norm],
                 scale=True,
@@ -40,68 +46,74 @@ class DCGAN(object):
                 reuse=None):
             with slim.arg_scope(
                     [slim.conv2d],
-                    kernel_size=[5, 5],
-                    stride=[2, 2],
                     normalizer_fn=slim.batch_norm,
                     activation_fn=lrelu):
 
-                for i in range(4):
-                    x = slim.conv2d(x, self.arch['ch_D'] * (2 ** i))
+                for i in range(n_layer):
+                    x = slim.conv2d(
+                        x,
+                        subnet['output'][i],
+                        subnet['kernel'][i],
+                        subnet['stride'][i])
 
-                x = slim.flatten(x)
+        x = slim.flatten(x)
 
-        z_mu = slim.fully_connected(x, self.arch['z_dim'],
+        with slim.arg_scope(
+            [slim.fully_connected],
+            num_outputs=self.arch['z_dim'],
             normalizer_fn=None,
-            activation_fn=None)
-        z_lv = slim.fully_connected(x, self.arch['z_dim'],
-            normalizer_fn=None,
-            activation_fn=None)
+            activation_fn=None):
+            z_mu = slim.fully_connected(x)
+            z_lv = slim.fully_connected(x)
         return z_mu, z_lv
 
 
-
     def _generator(self, z, is_training):
-        # Fixed upsampling rate
-        w = int(self.arch['img_w'] // 16)
-        h = int(self.arch['img_h'] // 16)
-        c = self.arch['img_c']
-        ch = self.arch['ch_D']
-
-        # [TODO] I didn't figure out how to use the `reuse` para in BN.
-
-        # [TODO] I have a question: If real and fake images went through
-        #        D independently, why didn't BNs get trouble?
+        subnet = self.arch['generator']
+        n_layer = len(subnet['output'])
+        h, w, c = subnet['hwc']
         with slim.arg_scope(
-                [slim.batch_norm],
-                scale=True,
-                updates_collections=None,
-                decay=0.9, epsilon=1e-5,
-                is_training=is_training,
-                scope='BN'):
+            [slim.batch_norm],
+            scale=True,
+            updates_collections=None,
+            decay=0.9, epsilon=1e-5,
+            is_training=is_training,
+            scope='BN'):
+
+            x = slim.fully_connected(
+                z,
+                h * w * c,
+                normalizer_fn=slim.batch_norm,
+                activation_fn=tf.nn.relu)
+            x = tf.reshape(x, [-1, h, w, c])
+
             with slim.arg_scope(
                     [slim.conv2d_transpose],
-                    kernel_size=[5, 5], stride=[2, 2],
-                    weights_regularizer=slim.l2_regularizer(L2),
+                    weights_regularizer=slim.l2_regularizer(
+                        self.arch['l2-regularizer']),
                     normalizer_fn=slim.batch_norm,
                     activation_fn=tf.nn.relu):
 
-                x = slim.fully_connected(z, h * w * ch * 8,
-                    normalizer_fn=slim.batch_norm,
-                    activation_fn=tf.nn.relu)
-
-                x = tf.reshape(x, [-1, h, w, ch * 8])
-                for i in [4, 2, 1]:
-                    x = slim.conv2d_transpose(x, ch * i)
+                for i in range(n_layer -1):
+                    x = slim.conv2d_transpose(
+                        x,
+                        subnet['output'][i],
+                        subnet['kernel'][i],
+                        subnet['stride'][i])
 
                 # Don't apply BN for the last layer of G
-                x = slim.conv2d_transpose(x, c,
+                x = slim.conv2d_transpose(
+                    x,
+                    subnet['output'][-1],
+                    subnet['kernel'][-1],
+                    subnet['stride'][-1],
                     normalizer_fn=None,
                     activation_fn=tf.nn.tanh)
         return x
 
     def _discriminator(self, x, is_training):
-        ch = self.arch['ch_D']
-
+        subnet = self.arch['discriminator']
+        n_layer = len(subnet['output'])
         with slim.arg_scope(
                 [slim.batch_norm],
                 scale=True,
@@ -112,21 +124,33 @@ class DCGAN(object):
                 scope='BN'):
             with slim.arg_scope(
                     [slim.conv2d],
-                    kernel_size=[5, 5], stride=[2, 2],
-                    weights_regularizer=slim.l2_regularizer(L2*10.),
+                    weights_regularizer=slim.l2_regularizer(
+                        self.arch['l2-regularizer']),
                     normalizer_fn=slim.batch_norm,
                     activation_fn=lrelu):
 
-                # Radford: not applying batchnorm to the discriminator input layer
-                x = slim.conv2d(x, ch, normalizer_fn=None)
-                for i in [2, 4, 8]:
-                    x = slim.conv2d(x, ch * i)
+                # Radford: [do] not applying batchnorm to the discriminator input layer
+                x = slim.conv2d(
+                    x,
+                    subnet['output'][0],
+                    subnet['kernel'][0],
+                    subnet['stride'][0],
+                    normalizer_fn=None)
+                for i in range(1, n_layer):
+                    x = slim.conv2d(
+                        x,
+                        subnet['output'][i],
+                        subnet['kernel'][i],
+                        subnet['stride'][i])
 
         # Don't apply BN for the last layer
         x = slim.flatten(x)
         h = x
-        x = slim.fully_connected(x, 1,
-            weights_regularizer=slim.l2_regularizer(L2*10.),
+        x = slim.fully_connected(
+            x,
+            1,
+            weights_regularizer=slim.l2_regularizer(
+                self.arch['l2-regularizer'] * 10.),
             activation_fn=None)
         return x, h  # no explicit `sigmoid`
 
@@ -135,56 +159,39 @@ class DCGAN(object):
             z_mu, z_lv = self._encode(x, is_training=self.is_training)
             # z = GaussianSampleLayer(z_mu, z_lv)
             z_ = GaussianSampleLayer(z_mu, z_lv)
-            z = tf.nn.sigmoid(z_) * 2. - 1.
+            with tf.name_scope('Gaussian_to_uniform'):
+                z = tf.nn.tanh(z_)
 
-            # z_direct = GaussianSampleLayer(
-            #     tf.zeros_like(z_mu),
-            #     tf.zeros_like(z_lv))
+            # [Test] ================================
             z_direct = tf.random_uniform(
                 shape=tf.shape(z_mu),
-                minval=-1,
-                maxval=.99,
+                minval=-1.0,
+                maxval=1.0,
                 name='z')
             xz = self._generate(
                 z_direct,
                 is_training=self.is_training)
             logit_fake_xz, _ = self._discriminate(xz,
                 is_training=self.is_training)
+            # ========================================
+
         elif self.arch['mode'] == 'DC-GAN':
-            # [TODO] Maybe I should make sampling stratified (but how?)
             batch_size = x.get_shape().as_list()[0]
             z = tf.random_uniform(
                 shape=[batch_size, self.arch['z_dim']],
-                minval=-1,
-                maxval=.99,
+                minval=-1.0,
+                maxval=1.0,
                 name='z')
         else:
             raise ValueError('Supported mode: DC-GAN or VAE-GAN')
 
         xh = self._generate(z, is_training=self.is_training)
-        self.xh = xh
-
-
-        # pdb.set_trace()
-
-        # x_real_n_fake = tf.concat(0, [x, xh])
-        # logit, last_repr = self._discriminate(
-        #     x_real_n_fake,
-        #     is_training=self.is_training)
-
-        # logit_true, logit_fake = tf.split(0, 2, logit)
-        # x_through_D, xh_through_D = tf.split(0, 2, last_repr)
 
         logit_true, x_through_D = self._discriminate(x,
             is_training=self.is_training)
         logit_fake, xh_through_D = self._discriminate(xh,
             is_training=self.is_training)
 
-        # Instance Noise (but added in the last layer) => useless
-        # logit_true_ = logit_true + tf.random_normal(
-        #     shape=tf.shape(logit_true), stddev=1.)
-        # logit_fake_ = logit_fake + tf.random_normal(
-        #     shape=tf.shape(logit_fake), stddev=1.)
 
         with tf.name_scope('loss'):
             loss = dict()
@@ -204,10 +211,6 @@ class DCGAN(object):
                     tf.ones_like(logit_fake)))
 
             if self.arch['mode'] == "VAE-GAN":
-                # loss['KL(z)'] = tf.reduce_mean(
-                #     GaussianKLD(
-                #         z_mu, z_lv,
-                #         tf.zeros_like(z_mu), tf.zeros_like(z_lv)))
                 loss['KL(z)'] = tf.reduce_mean(
                     GaussianKLD(
                         z_mu, z_lv,
@@ -219,10 +222,12 @@ class DCGAN(object):
                         xh_through_D,
                         tf.zeros_like(xh_through_D)))
                 
+                # [Test] ================================
                 loss['G_fake_xz'] = tf.reduce_mean(
                     tf.nn.sigmoid_cross_entropy_with_logits(
                         logit_fake_xz,
                         tf.ones_like(logit_fake_xz)))
+                # ========================================
 
             # For summaries
             with tf.name_scope('Summary'):
@@ -246,11 +251,7 @@ class DCGAN(object):
             minval=-1,
             maxval=.99,
             name='z_test')
-        # return self.generate(z, is_training=False)
-        # return self.xh  # [BUG] called before assigned
         return self._generate(z, is_training=False)
-        # return xh
-
 
     def encode(self, x):
         z_mu, z_lv = self._encode(x, is_training=False)
@@ -258,23 +259,18 @@ class DCGAN(object):
 
     def decode(self, z, y=None):
         return self._generate(z, is_training=False)
-        
+
     def interpolate(self, x1, x2, n):
         ''' Interpolation from the latent space '''
-        # z's should be 1x100
-        z1, _ = self._encode(
-            tf.expand_dims(x1, 0),
-            is_training=False)
-        z2, _ = self._encode(
-            tf.expand_dims(x2, 0),
-            is_training=False)
+        x1 = tf.expand_dims(x1, 0)
+        x2 = tf.expand_dims(x2, 0)
+        z1, _ = self._encode(x1, is_training=False)
+        z2, _ = self._encode(x2, is_training=False)
         a = tf.reshape(tf.linspace(0., 1., n), [n, 1])
 
         z1 = tf.matmul(1. - a, z1)
         z2 = tf.matmul(a, z2)
-        z = tf.add(z1, z2)
-        # z = tf.add(z1, tf.matmul(a, z2))
+        z = tf.nn.tanh(tf.add(z1, z2))  # Gaussian-to-Uniform
         xh = self._generate(z, is_training=False)
-        # xh = tf.transpose(xh, [1, 2, 3, 0])
-        # xh = tf.reshape()
+        xh = tf.concat(0, [x1, xh, x2])
         return xh
