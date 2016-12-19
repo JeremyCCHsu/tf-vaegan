@@ -236,6 +236,7 @@ class VAEGAN(object):
                 tf.histogram_summary('D(Fake)', tf.nn.sigmoid(logit_fake))
                 tf.histogram_summary('logit_true', logit_true)
                 tf.histogram_summary('logit_fake', logit_fake)
+                tf.histogram_summary('logit_sample', logit_fake_xz)
                 tf.histogram_summary('logits',
                     tf.concat(0, [logit_fake, logit_true]))
                 tf.image_summary("G", xh)
@@ -248,8 +249,8 @@ class VAEGAN(object):
         '''
         z = tf.random_uniform(
             shape=[z, self.arch['z_dim']],
-            minval=-1,
-            maxval=.99,
+            minval=-1.0,
+            maxval=1.0,
             name='z_test')
         return self._generate(z, is_training=False)
 

@@ -49,17 +49,13 @@ tf.app.flags.DEFINE_integer('n_epoch', 100, 'num of epoch')
 tf.app.flags.DEFINE_integer('batch_size', 64, 'batch size')
 tf.app.flags.DEFINE_float('lr', 2e-4, 'learning rate')
 tf.app.flags.DEFINE_float('beta1', 0.5, 'beta1 in AdamOptimizer')
-tf.app.flags.DEFINE_float('reconst_v_gan', 2e-4, 'beta1 in AdamOptimizer')
-# tf.app.flags.DEFINE_boolean('train', True, 'is training or not')
+tf.app.flags.DEFINE_float('reconst_v_gan', 1e-1, 'weight on DIS cost')
+tf.app.flags.DEFINE_float('direct_sample', 0.0, 'weight on cost of direct samples')
 
 
 def visualize_random_samples(sess, xh, n=8, filename=None):
-    # img_real = sess.run(imgs)
-    # [TODO] should make sure n*n < batch_size
-    #        or should I input a TF tensor?
     img_fake = sess.run(xh)
-    
-    # pdb.set_trace()
+
     shape = img_fake.shape[1:]
     shape = [n, n] + list(shape)
     img_fake = np.reshape(img_fake[: n*n], shape)
@@ -70,18 +66,7 @@ def visualize_random_samples(sess, xh, n=8, filename=None):
     img_fake = (img_fake - img_fake.min()) / (img_fake.max() - img_fake.min()) * 255
     img_fake = img_fake.astype(np.uint8)
 
-    # plt.figure()
-    # for i in range(15):
-    #     plt.subplot(4, 4, i + 1)
-    #     plt.imshow(img_fake[i, :, :, 0], interpolation='none', cmap='gray')
-    #     plt.colorbar()
-    # plt.subplot(4, 4, 16)
-    # plt.imshow(img_real[0, :, :, 0], interpolation='none', cmap='gray')
-    # plt.colorbar()
-
     if filename:
-        # plt.savefig(filename)
-        # plt.close()
         im = Image.fromarray(img_fake[:, :, 0])
         im.save(filename)
 
@@ -97,13 +82,6 @@ def visualize_interpolation(sess, x_interp, N=8, filename=None):
     x_s = np.reshape(x_s, [N, M, shapes[1], shapes[2], shapes[3]])
     x_s = np.transpose(x_s, [0, 2, 1, 3, 4])
     x_s = np.reshape(x_s, [N * shapes[1], M * shapes[2], shapes[3]])
-
-    # plt.figure(figsize=(M, N))
-    # for i in range(x_.shape[0]):
-    #     plt.subplot(1, x_.shape[0], i + 1)
-    #     plt.imshow(x_[i, :, :, 0], interpolation='none', cmap='gray')
-    #     plt.axis('off')
-
     x_s = (x_s / 2 + 0.5) * 255
     x_s = x_s.astype(np.uint8)
     # [TODO] 1. Use tf.image.encode_png, or
@@ -111,13 +89,6 @@ def visualize_interpolation(sess, x_interp, N=8, filename=None):
     im = Image.fromarray(x_s[:, :, 0])
     if filename:
         im.save(filename)
-
-    # plt.imshow(x_s[:, :, 0], interpolation='none', cmap='gray')
-    # plt.axis('off')
-    
-    # if filename:
-    #     plt.savefig(filename)
-    #     plt.close()
 
 
 def get_optimization_ops(loss, args, mode='VAE-GAN'):
@@ -142,7 +113,9 @@ def get_optimization_ops(loss, args, mode='VAE-GAN'):
         e_vars = [v for v in trainables if 'Encoder' in v.name]
 
         obj_D = loss['D_fake'] + loss['D_real']
-        obj_G = loss['G_fake'] + loss['Dis'] * args.reconst_v_gan #+ loss['G_fake_xz'] 
+        obj_G = loss['G_fake'] \
+            + loss['Dis'] * args.reconst_v_gan \
+            + loss['G_fake_xz'] * args.direct_sample
         obj_E = loss['KL(z)'] + loss['Dis']
 
         opt_e = optimizer.minimize(obj_E, var_list=e_vars)
@@ -177,6 +150,9 @@ def validate_log_dirs(args):
     # Note: `logdir` and `restore_from` are exclusive
     if args.restore_from is None:
         restore_from = logdir
+    else:
+        restore_from = args.restore_from 
+
 
     return dict(logdir=logdir,
         logdir_root=logdir_root,
@@ -195,8 +171,6 @@ def main():
 
     with open(args.architecture) as f:
         arch = json.load(f)
-
-    # copy(args.architecture, dirs['logdir'])
 
     imgs, info = img_reader(
         datadir=args.datadir,
@@ -291,7 +265,7 @@ def main():
                 _, l_df, l_dr = sess.run([opt_d, loss['D_fake'], loss['D_real']])
 
                 # Update G twice
-                _, l_g, summary = sess.run([opt_g, loss['G_fake'], summary_op])
+                _, l_g = sess.run([opt_g, loss['G_fake']])
                 _, l_g, summary = sess.run([opt_g, loss['G_fake'], summary_op])
                 if arch['mode'] == 'VAE-GAN':
                     _, l_e, l_dis = sess.run([opt_e, loss['KL(z)'], loss['Dis']])
