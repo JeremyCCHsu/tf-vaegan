@@ -46,6 +46,7 @@ class VAEGAN(object):
                 reuse=None):
             with slim.arg_scope(
                     [slim.conv2d],
+                    weights_regularizer=slim.l2_regularizer(subnet['l2-reg']),
                     normalizer_fn=slim.batch_norm,
                     activation_fn=lrelu):
 
@@ -61,6 +62,7 @@ class VAEGAN(object):
         with slim.arg_scope(
             [slim.fully_connected],
             num_outputs=self.arch['z_dim'],
+            weights_regularizer=slim.l2_regularizer(subnet['l2-reg']),
             normalizer_fn=None,
             activation_fn=None):
             z_mu = slim.fully_connected(x)
@@ -89,8 +91,7 @@ class VAEGAN(object):
 
             with slim.arg_scope(
                     [slim.conv2d_transpose],
-                    weights_regularizer=slim.l2_regularizer(
-                        self.arch['l2-regularizer']),
+                    weights_regularizer=slim.l2_regularizer(subnet['l2-reg']),
                     normalizer_fn=slim.batch_norm,
                     activation_fn=tf.nn.relu):
 
@@ -124,8 +125,7 @@ class VAEGAN(object):
                 scope='BN'):
             with slim.arg_scope(
                     [slim.conv2d],
-                    weights_regularizer=slim.l2_regularizer(
-                        self.arch['l2-regularizer']),
+                    weights_regularizer=slim.l2_regularizer(subnet['l2-reg']),
                     normalizer_fn=slim.batch_norm,
                     activation_fn=lrelu):
 
@@ -149,8 +149,7 @@ class VAEGAN(object):
         x = slim.fully_connected(
             x,
             1,
-            weights_regularizer=slim.l2_regularizer(
-                self.arch['l2-regularizer'] * 10.),
+            weights_regularizer=slim.l2_regularizer(subnet['l2-reg']),
             activation_fn=None)
         return x, h  # no explicit `sigmoid`
 
@@ -258,8 +257,11 @@ class VAEGAN(object):
         z_mu, z_lv = self._encode(x, is_training=False)
         return dict(mu=z_mu, log_var=z_lv)
 
-    def decode(self, z, y=None):
-        return self._generate(z, is_training=False)
+    def decode(self, z, y=None, tanh=False):
+        if tanh:
+            return self._generate(z, is_training=False)
+        else:
+            return self._generate(tf.nn.tanh(z), is_training=False)
 
     def interpolate(self, x1, x2, n):
         ''' Interpolation from the latent space '''
