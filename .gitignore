@@ -1,6 +1,10 @@
 *.pyc
-log*/*
+old_*/*
 *.png
 *.jpg
 sprite*
 test*
+data/
+logdir/
+*.tar.gz
+

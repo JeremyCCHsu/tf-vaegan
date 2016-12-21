@@ -115,7 +115,7 @@ def get_optimization_ops(loss, args, mode='VAE-GAN'):
         obj_D = loss['D_fake'] + loss['D_real']
         obj_G = loss['G_fake'] \
             + loss['Dis'] * args.reconst_v_gan \
-            + loss['G_fake_xz'] * args.direct_sample
+            # + loss['G_fake_xz'] * args.direct_sample
         obj_E = loss['KL(z)'] + loss['Dis']
 
         opt_e = optimizer.minimize(obj_E, var_list=e_vars)
@@ -172,6 +172,7 @@ def main():
     with open(args.architecture) as f:
         arch = json.load(f)
 
+
     imgs, info = img_reader(
         datadir=args.datadir,
         img_dims=arch['hwc'],
@@ -188,19 +189,19 @@ def main():
     opt_d, opt_g, opt_e = get_optimization_ops(loss, args, arch['mode'])
 
 
-    # ========== For embedding =============
-    h, w, c = arch['hwc']
-    img4em = tf.Variable(
-        np.reshape(
-            np.fromfile(
-                SPRITE_NUMPY_FILE, np.float32),
-                [N_VISUALIZE, h, w, c]),
-        name='emb_input_img')
-    codes = machine.encode(img4em)
-    em_var = tf.Variable(
-        tf.zeros((N_VISUALIZE, arch['z_dim'])),
-        name='embeddings')
-    # ======================================
+    # # ========== For embedding =============
+    # h, w, c = arch['hwc']
+    # img4em = tf.Variable(
+    #     np.reshape(
+    #         np.fromfile(
+    #             SPRITE_NUMPY_FILE, np.float32),
+    #             [N_VISUALIZE, h, w, c]),
+    #     name='emb_input_img')
+    # codes = machine.encode(img4em)
+    # em_var = tf.Variable(
+    #     tf.zeros((N_VISUALIZE, arch['z_dim'])),
+    #     name='embeddings')
+    # # ======================================
 
 
 
@@ -208,6 +209,9 @@ def main():
     writer.add_graph(tf.get_default_graph())
     
     summary_op = tf.merge_all_summaries()
+
+    with open(os.path.join(dirs['logdir'], args.architecture), 'w') as f:
+        json.dump(arch, f)
 
     if args.gpu_cfg:
         with open(args.gpu_cfg) as f:
@@ -241,18 +245,18 @@ def main():
 
 
 
-    # ========== For embedding =============
-    ass_op = tf.assign(em_var, codes['mu'], name='X/em_var')
+    # # ========== For embedding =============
+    # ass_op = tf.assign(em_var, codes['mu'], name='X/em_var')
 
-    config = projector.ProjectorConfig()
-    embedding = config.embeddings.add()
-    embedding.tensor_name = em_var.name
-    print(em_var.name, em_var.get_shape())
-    embedding.sprite.image_path = PATH_TO_SPRITE_IMAGE
-    embedding.sprite.single_image_dim.extend([w, h])
-    embedding.metadata_path = PATH_TO_LABEL
-    projector.visualize_embeddings(writer, config)
-    # =====================================
+    # config = projector.ProjectorConfig()
+    # embedding = config.embeddings.add()
+    # embedding.tensor_name = em_var.name
+    # print(em_var.name, em_var.get_shape())
+    # embedding.sprite.image_path = PATH_TO_SPRITE_IMAGE
+    # embedding.sprite.single_image_dim.extend([w, h])
+    # embedding.metadata_path = PATH_TO_LABEL
+    # projector.visualize_embeddings(writer, config)
+    # # =====================================
 
 
     # ========== Actual training loop ==========
@@ -291,7 +295,7 @@ def main():
                             filename=os.path.join(
                                 dirs['logdir'],
                                 'test-Ep{:03d}-It{:04d}.png'.format(ep, it)))
-                        sess.run(ass_op)
+                        # sess.run(ass_op)
                     
                     visualize_random_samples(sess, xh,
                         filename=os.path.join(
@@ -307,8 +311,6 @@ def main():
 
     finally:
         save(saver, sess, dirs['logdir'], step)
-        with open(os.path.join(dirs['logdir'], args.architecture), 'w') as f:
-            json.dump(arch, f)
         coord.request_stop()
         coord.join(threads)
 
