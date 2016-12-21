@@ -3,7 +3,7 @@ old_*/*
 ./*.png
 ./*.jpg
 sprite*
-test*
+./test*
 data/
 logdir/
 *.tar.gz
