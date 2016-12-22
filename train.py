@@ -34,7 +34,7 @@ N_VISUALIZE = 10000
 
 args = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string(
-    'datadir', './data/TWKai98_32x32_trn', 'dir to dataset')
+    'datadir', './data/TWKai98_32x32', 'dir to dataset')
 tf.app.flags.DEFINE_string(
     'logdir_root', None, 'root of log dir')
 tf.app.flags.DEFINE_string(

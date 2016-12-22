@@ -10,14 +10,15 @@ As the name indicates, VAE-GAN replaces GAN's generator with a variational auto-
 
 ## Dependencies
 ### Environment
-Ubuntu 16.04
-Python 3.5
+Ubuntu 16.04 ([Optional] to download data using `wget`)  
+Python 3.5  
 
 
-### Packages
+### Python Packages
 1. Tensorflow v0.12  
 2. Matplotlib  
 3. PIL
+
 
 
 ## Experiements
@@ -47,7 +48,7 @@ I'm interested in carrying out simple arithmetics in the latent space just as wh
 
 Chinese characters are formed by many fundamental parts. For example, the word 酪 (chese) has two parts: the left is a 酉 denoting its characteristics (related to "ferment") and the right is a 各 (individual) hinting its pronouciation. I'd like to know if it's possible to create visually plausible characters that doesn't exist in Chinese.
 
-<img src="imgs/test-arith-12.png" height=400 />  
+<img src="imgs/test-arith-12.png" height=3\00 />  
 Figure: Character arithmetic expample of "A - B + C." 
 
 1st panel (from top): the original images of the input (A, B, and C)  
@@ -69,11 +70,10 @@ The gamma parameter in Eq. (9) is a trade-off between *style* and *content* as m
 ### Using existing models
 Please modify `test.txt` file which contains the "A B C" tuples (one tuple per line)  
 ```bash
-tar zxvf logdir.tar.gz
+./get_data.sh
 python validate --checkpoint logdir/train/pretrained/model.ckpt-31200
 ```
 It'll give you a bunch of generated images as described in the "Character Arithmetics" section.  
-*Note*: As for the pretrained model file, it's too large for Github. Maybe I'll figure out where to put it later on (status: coming soon).
 
 
 ### Train a new model
@@ -82,6 +82,7 @@ python train.py --dataset [your dataset] [options]
 ```
 
 Note:  
+0. If you have get the Chinese character dataset by `./get_data.sh`, you can simply run `python train.py` to re-run my training using the same dataset.  
 1. You can modify `architecture.json` to try different network specifications.  
 2. You can use the Tensorboard to track the training.  
 3. I disabled embedding viewer in my training script. You you wanna use it, please modify and run `make_sprite.py` and `python make_tsv.py`
