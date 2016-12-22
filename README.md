@@ -47,12 +47,13 @@ I'm interested in carrying out simple arithmetics in the latent space just as wh
 
 Chinese characters are formed by many fundamental parts. For example, the word 酪 (chese) has two parts: the left is a 酉 denoting its characteristics (related to "ferment") and the right is a 各 (individual) hinting its pronouciation. I'd like to know if it's possible to create visually plausible characters that doesn't exist in Chinese.
 
-<img src="imgs/test-arith-12.png" />  
+<img src="imgs/test-arith-12.png" height=400 />  
 Figure: Character arithmetic expample of "A - B + C." 
 
 1st panel (from top): the original images of the input (A, B, and C)  
 2nd panel: the reconstructed images from VAE-GAN.  
-3rd panel: I carried out "D = a*(A - B + C)" in the latent space and then generate an image from D. The coefficient `a` is [0.25, 0.5, 1, 2, 3] from left to right.  
+3rd panel: I carried out "D = a*(A - B + C)" in the latent space and then generate an image from D.  
+The coefficient `a` is [0.25, 0.5, 1, 2, 3] from left to right.  
 4th panel: "A - B + C" in the input domain.
 
 In this case, A=酪(cheese), B=鉻 (chromium), and C=鉸 (scissors).
@@ -71,14 +72,16 @@ Please modify `test.txt` file which contains the "A B C" tuples (one tuple per l
 tar zxvf logdir.tar.gz
 python validate --checkpoint logdir/train/pretrained/model.ckpt-31200
 ```
-It'll give you a bunch of generated images as described in the "Character Arithmetics" section.
+It'll give you a bunch of generated images as described in the "Character Arithmetics" section.  
+*Note*: As for the pretrained model file, it's too large for Github. Maybe I'll figure out where to put it later on (status: coming soon).
+
 
 ### Train a new model
 ```bash
-tar zxvf data.tar.gz
-python make_sprite.py
-python make_tsv.py
 python train.py --dataset [your dataset] [options]
 ```
-You can modify `architecture.json` to try different network specifications.  
-You can use the Tensorboard to track the training.
+
+Note:  
+1. You can modify `architecture.json` to try different network specifications.  
+2. You can use the Tensorboard to track the training.  
+3. I disabled embedding viewer in my training script. You you wanna use it, please modify and run `make_sprite.py` and `python make_tsv.py`
