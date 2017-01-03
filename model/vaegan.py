@@ -115,6 +115,7 @@ class VAEGAN(object):
     def _discriminator(self, x, is_training):
         subnet = self.arch['discriminator']
         n_layer = len(subnet['output'])
+        feature = list()
         with slim.arg_scope(
                 [slim.batch_norm],
                 scale=True,
@@ -136,16 +137,18 @@ class VAEGAN(object):
                     subnet['kernel'][0],
                     subnet['stride'][0],
                     normalizer_fn=None)
+                feature.append(x)
                 for i in range(1, n_layer):
                     x = slim.conv2d(
                         x,
                         subnet['output'][i],
                         subnet['kernel'][i],
                         subnet['stride'][i])
+                    feature.append(x)
 
         # Don't apply BN for the last layer
         x = slim.flatten(x)
-        h = x
+        h = slim.flatten(feature[subnet['feature_layer'] - 1])
         x = slim.fully_connected(
             x,
             1,
@@ -153,20 +156,22 @@ class VAEGAN(object):
             activation_fn=None)
         return x, h  # no explicit `sigmoid`
 
-    def loss(self, x):      
+    def loss(self, x):
+        def mean_sigmoid_cross_entropy_with_logits(logit, truth):
+            '''
+            truth: 0. or 1.
+            '''
+            return tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(
+                    logit,
+                    truth * tf.ones_like(logit)))
+
         if self.arch['mode'] == 'VAE-GAN':
             z_mu, z_lv = self._encode(x, is_training=self.is_training)
-            # z = GaussianSampleLayer(z_mu, z_lv)
-            z_ = GaussianSampleLayer(z_mu, z_lv)
-            with tf.name_scope('Gaussian_to_uniform'):
-                z = tf.nn.tanh(z_)
+            z = GaussianSampleLayer(z_mu, z_lv)
 
             # [Test] ================================
-            z_direct = tf.random_uniform(
-                shape=tf.shape(z_mu),
-                minval=-1.0,
-                maxval=1.0,
-                name='z')
+            z_direct = tf.random_normal(shape=tf.shape(z_mu))
             xz = self._generate(
                 z_direct,
                 is_training=self.is_training)
@@ -194,20 +199,18 @@ class VAEGAN(object):
 
         with tf.name_scope('loss'):
             loss = dict()
-            loss['D_real'] = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(
-                    logit_true,
-                    tf.ones_like(logit_true)))
+            loss['D_real'] = \
+                mean_sigmoid_cross_entropy_with_logits(logit_true, 1.)
 
-            loss['D_fake'] = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(
-                    logit_fake,
-                    tf.zeros_like(logit_fake)))
+            loss['D_fake'] = 0.5 * (
+                mean_sigmoid_cross_entropy_with_logits(logit_fake, 0.) +\
+                mean_sigmoid_cross_entropy_with_logits(logit_fake_xz, 0.))
+            # loss['D_fake'] /= 2.    # [TODO] Jmod
 
-            loss['G_fake'] = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(
-                    logit_fake,
-                    tf.ones_like(logit_fake)))
+            loss['G_fake'] = 0.5 * (
+                mean_sigmoid_cross_entropy_with_logits(logit_fake, 1.) +\
+                mean_sigmoid_cross_entropy_with_logits(logit_fake_xz, 1.))
+            # loss['G_fake'] /= 2.
 
             if self.arch['mode'] == "VAE-GAN":
                 loss['KL(z)'] = tf.reduce_mean(
@@ -230,15 +233,15 @@ class VAEGAN(object):
 
             # For summaries
             with tf.name_scope('Summary'):
-                tf.histogram_summary('z', z)
-                tf.histogram_summary('D(true)', tf.nn.sigmoid(logit_true))
-                tf.histogram_summary('D(Fake)', tf.nn.sigmoid(logit_fake))
-                tf.histogram_summary('logit_true', logit_true)
-                tf.histogram_summary('logit_fake', logit_fake)
-                tf.histogram_summary('logit_sample', logit_fake_xz)
-                tf.histogram_summary('logits',
+                tf.summary.histogram('z', z)
+                tf.summary.histogram('D(true)', tf.nn.sigmoid(logit_true))
+                tf.summary.histogram('D(Fake)', tf.nn.sigmoid(logit_fake))
+                tf.summary.histogram('logit_true', logit_true)
+                tf.summary.histogram('logit_fake', logit_fake)
+                tf.summary.histogram('logit_sample', logit_fake_xz)
+                tf.summary.histogram('logits',
                     tf.concat(0, [logit_fake, logit_true]))
-                tf.image_summary("G", xh)
+                tf.summary.image("G", xh)
         return loss
 
     def sample(self, z=128):
@@ -246,11 +249,12 @@ class VAEGAN(object):
         if z is not given or is an `int`,
         this fcn generates (z=128) samples
         '''
-        z = tf.random_uniform(
-            shape=[z, self.arch['z_dim']],
-            minval=-1.0,
-            maxval=1.0,
-            name='z_test')
+        # z = tf.random_uniform(
+        #     shape=[z, self.arch['z_dim']],
+        #     minval=-1.0,
+        #     maxval=1.0,
+        #     name='z_test')
+        z = tf.random_normal(shape=[z, self.arch['z_dim']])
         return self._generate(z, is_training=False)
 
     def encode(self, x):
@@ -258,10 +262,7 @@ class VAEGAN(object):
         return dict(mu=z_mu, log_var=z_lv)
 
     def decode(self, z, y=None, tanh=False):
-        if tanh:
-            return self._generate(z, is_training=False)
-        else:
-            return self._generate(tf.nn.tanh(z), is_training=False)
+        return self._generate(z, is_training=False)
 
     def interpolate(self, x1, x2, n):
         ''' Interpolation from the latent space '''
@@ -269,11 +270,21 @@ class VAEGAN(object):
         x2 = tf.expand_dims(x2, 0)
         z1, _ = self._encode(x1, is_training=False)
         z2, _ = self._encode(x2, is_training=False)
-        a = tf.reshape(tf.linspace(0., 1., n), [n, 1])
 
-        z1 = tf.matmul(1. - a, z1)
-        z2 = tf.matmul(a, z2)
-        z = tf.nn.tanh(tf.add(z1, z2))  # Gaussian-to-Uniform
+        def L2norm(x):
+            return tf.sqrt(tf.reduce_sum(tf.square(x), -1))
+
+        norm1 = L2norm(z1)
+        norm2 = L2norm(z2)
+
+        theta = tf.matmul(z1/norm1, z2/norm2, transpose_b=True)
+
+        a = tf.reshape(tf.linspace(0., 1., n), [n, 1])  # 10x1
+
+        a1 = tf.sin((1. - a) * theta) / tf.sin(theta)
+        a2 = tf.sin(a * theta) / tf.sin(theta)
+        z = a1 * z1 + a2 * z2
+
         xh = self._generate(z, is_training=False)
         xh = tf.concat(0, [x1, xh, x2])
         return xh

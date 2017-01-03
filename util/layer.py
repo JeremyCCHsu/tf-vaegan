@@ -13,20 +13,20 @@ def GaussianLogDensity(x, mu, log_var, name='GaussianLogDensity'):
     return log_prob
 
 
-def GaussianKLD(mu1, log_var1, mu2, log_var2):
+def GaussianKLD(mu1, lv1, mu2, lv2):
     ''' Kullback-Leibler divergence of two Gaussians
         *Assuming that each dimension is independent
         mu: mean
-        log_var: log variance
+        lv: log variance
         Equation: http://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
     '''
     with tf.name_scope('GaussianKLD'):
-        var = tf.exp(log_var1)
-        var2 = tf.exp(log_var2)
-        mu_diff_sq = tf.square(tf.sub(mu1, mu2))
-        single_variable_kld = 0.5 * (log_var2 - log_var1) \
-            + 0.5 * tf.div(var, var2) * (tf.add(1.0, mu_diff_sq)) - 0.5
-        return tf.reduce_sum(single_variable_kld, -1)
+        v1 = tf.exp(lv1)
+        v2 = tf.exp(lv2)
+        mu_diff_sq = tf.square(mu1 - mu2)
+        dimwise_kld = .5 * (
+            (lv2 - lv1) + tf.div(v1, v2) + tf.div(mu_diff_sq, v2) - 1.)
+        return tf.reduce_sum(dimwise_kld, -1)
 
 
 def GaussianSampleLayer(z_mu, z_lv, name='GaussianSampleLayer'):

@@ -270,7 +270,7 @@ def main():
 
                 # Update G twice
                 _, l_g = sess.run([opt_g, loss['G_fake']])
-                _, l_g, summary = sess.run([opt_g, loss['G_fake'], summary_op])
+                _, l_g = sess.run([opt_g, loss['G_fake']])
                 if arch['mode'] == 'VAE-GAN':
                     _, l_e, l_dis = sess.run([opt_e, loss['KL(z)'], loss['Dis']])
 
@@ -286,10 +286,13 @@ def main():
                 msg += 'T={:.2f}'.format(time.time() - time_i)
                 print(msg)
 
-                writer.add_summary(summary, step)
+                # writer.add_summary(summary, step)
 
                 # Demo/Output
                 if it % (n_iter_per_epoch // 1) == 0:
+                    summary = sess.run(summary_op)
+                    writer.add_summary(summary, step)
+
                     if arch['mode'] == 'VAE-GAN':
                         visualize_interpolation(sess, x_interp,
                             filename=os.path.join(
