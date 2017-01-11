@@ -48,7 +48,7 @@ I'm interested in carrying out simple arithmetics in the latent space just as wh
 
 Chinese characters are formed by many fundamental parts. For example, the word 酪 (chese) has two parts: the left is a 酉 denoting its characteristics (related to "ferment") and the right is a 各 (individual) hinting its pronouciation. I'd like to know if it's possible to create visually plausible characters that doesn't exist in Chinese.
 
-<img src="imgs/test-arith-12.png" height=3\00 />  
+<img src="imgs/test-arith-12.png" height=300 />  
 Figure: Character arithmetic expample of "A - B + C." 
 
 1st panel (from top): the original images of the input (A, B, and C)  
