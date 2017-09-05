@@ -22,8 +22,15 @@ Python 3.5
 
 
 ## Experiements
-Dataset: 20,000 Chinese characters (each with only one *.png file) obtained from [全字庫](http://www.cns11643.gov.tw).  
-Network architecture: VAE-GAN implemented with CNN, specified in `architecture.json`
+### Dataset
+CNS dataset: 20,000 Chinese characters (each with only one *.png file) extracted from [全字庫](http://www.cns11643.gov.tw).  
+[Site](http://www.cns11643.gov.tw/AIDB/welcome_en.do)  
+[Copyright](http://www.cns11643.gov.tw/AIDB/copyright.do)  
+[Download](http://www.cns11643.gov.tw/AIDB/Open_Data.zip)
+
+
+### Network architecture  
+VAE-GAN implemented with CNN, specified in `architecture.json`
 
 
 ### Simple interpolation
